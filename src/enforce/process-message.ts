@@ -9,6 +9,7 @@ import { stepSticker, type StickerState } from "../detect/stickers.js";
 import { lowEffortRule } from "../detect/low-effort.js";
 import type { Settings } from "../settings/schema.js";
 import { recordStrike, type Verdict } from "./strikes.js";
+import { score } from "../stats/scores.js";
 export interface MessageInput {
   chatId: number;
   settings: Settings;
@@ -62,8 +63,8 @@ export async function processMessage(
     // Every non-sticker breaks this user's run, including exempt or empty messages.
     if (!input.stickerId)
       await tx.query(
-        `UPDATE sticker_state SET state=jsonb_set(state,'{run}','0') WHERE chat_id=$1 AND user_id=$2`,
-        [chatId, userId],
+        `UPDATE sticker_state SET state=jsonb_set(state,'{run}','0'),updated_at=$3 WHERE chat_id=$1 AND user_id=$2`,
+        [chatId, userId, now],
       );
     const normalized = normalize(input.text, input.entities);
     if (
@@ -81,8 +82,8 @@ export async function processMessage(
       ).rows[0]?.state;
       const result = stepSticker(previous, input.stickerId, now, s.stickers);
       await tx.query(
-        "INSERT INTO sticker_state(chat_id,user_id,state) VALUES($1,$2,$3) ON CONFLICT(chat_id,user_id) DO UPDATE SET state=$3",
-        [chatId, userId, JSON.stringify(result.state)],
+        "INSERT INTO sticker_state(chat_id,user_id,state,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(chat_id,user_id) DO UPDATE SET state=$3,updated_at=$4",
+        [chatId, userId, JSON.stringify(result.state), now],
       );
       return result.rule
         ? audit({ action: "delete_nostrike", rule: result.rule })
@@ -94,21 +95,8 @@ export async function processMessage(
         [chatId, messageId],
       )
     ).rows[0];
-    async function stats(classification: string | null) {
-      if (prior?.classification === classification) return;
-      const originals =
-        Number(classification === "original") -
-        Number(prior?.classification === "original");
-      const repeats =
-        Number(classification === "repeat") -
-        Number(prior?.classification === "repeat");
-      if (originals || repeats)
-        await tx.query(
-          `INSERT INTO stats(chat_id,user_id,originals,repeats) VALUES($1,$2,$3,$4)
-        ON CONFLICT(chat_id,user_id) DO UPDATE SET originals=stats.originals+$3,repeats=stats.repeats+$4`,
-          [chatId, userId, originals, repeats],
-        );
-    }
+    const stats = (classification: string | null) =>
+      score(tx, chatId, userId, messageId, classification, now);
     const lowRule =
       !input.mediaId && (!input.kind || input.kind === "text") && input.text
         ? lowEffortRule(
@@ -214,7 +202,7 @@ export async function processMessage(
       if (match) rule = "near_text";
     }
     const classification = match ? "repeat" : "original";
-    await stats(classification);
+
     await tx.query(
       `INSERT INTO messages(chat_id,message_id,user_id,raw_text,normalized_text,media_group_id,kind,created_at,edited_at,classification)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(chat_id,message_id) DO UPDATE
@@ -237,6 +225,7 @@ export async function processMessage(
       [chatId, messageId],
     );
     if (!match) {
+      await stats("original");
       for (const fp of fingerprints)
         await tx.query(
           `INSERT INTO fingerprints(chat_id,kind,hash,message_id,user_id,created_at)
@@ -270,7 +259,8 @@ export async function processMessage(
           [chatId, userId, input.mediaGroupId],
         )
       ).rows[0];
-      if (album)
+      if (album) {
+        await stats(null);
         return audit({
           ...details,
           action: ["mute", "delete", "delete_nostrike"].includes(
@@ -280,6 +270,7 @@ export async function processMessage(
             : "none",
           silent: true,
         });
+      }
     }
     let verdict: Verdict | undefined;
     if (s.chainMode !== "off" && rule !== "near_text") {
@@ -331,10 +322,11 @@ export async function processMessage(
       ...(verdict ??
         (await recordStrike(tx, chatId, userId, now, s, input.canMute))),
     };
+    await stats(verdict.strike ? "repeat" : null);
     if (input.mediaGroupId)
       await tx.query(
-        "INSERT INTO album_actions(chat_id,user_id,media_group_id,verdict) VALUES($1,$2,$3,$4)",
-        [chatId, userId, input.mediaGroupId, JSON.stringify(verdict)],
+        "INSERT INTO album_actions(chat_id,user_id,media_group_id,verdict,created_at) VALUES($1,$2,$3,$4,$5)",
+        [chatId, userId, input.mediaGroupId, JSON.stringify(verdict), now],
       );
     return audit(verdict);
   });

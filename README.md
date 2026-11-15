@@ -4,7 +4,7 @@ A Telegram group bot that encourages original messages: normalized exact repeats
 earn warnings, deletions, then escalating mutes. Each group's history is isolated.
 Milestones 1–4 implement text, link, forward, media and near-text matching,
 sticker limits, chains, albums, edits, exemptions, strike decay and audit counters.
-The engine also supports milestone 5 low-effort filters. Private admin settings menus are available; scores and public-launch tooling remain future work.
+Milestones 5–6 add scores, explanations, privacy commands, scheduled cleanup and operations tooling. See [Operations](docs/OPERATIONS.md) and [Privacy](docs/PRIVACY.md).
 
 ## Local development (PGlite)
 
@@ -52,6 +52,10 @@ History starts when the bot joins; Telegram does not supply past messages.
 - `/settings`: group admins get a private settings link; in private, choose a managed chat.
 - `/status`: refresh the bot's rights and display the current settings.
 - `/privacy`: storage and removal information.
+- `/me`: your counters, rate, streak, best streak and decayed strikes.
+- `/top`: this ISO week's top ten, at most once per chat per minute.
+- `/why`: your latest action privately; admins can reply to inspect five actions.
+- `/forgetme`: erase your text and scores here; privately, confirm across all chats.
 - `/help`: usage and command list.
 
 New chats use **relaxed**: 24-hour memory, two warning strikes, one delete-only
@@ -70,7 +74,7 @@ record retain the configured duration.
 Notices first target only the offending user through an ephemeral group message,
 then fall back to a private message. There is no public-notice fallback.
 The API payload uses `ephemeral_message_parameters.receiver_user_id`.
-Onboarding and explicit command responses are ordinary chat messages.
+Onboarding and /me and /top responses are ordinary chat messages; /why uses private notices.
 
 ## Wider detection and filters
 
@@ -123,13 +127,12 @@ that still matches the same original does not add another strike or repeat count
 Edits change counters only when classification changes, transferring the count
 between originals and repeats.
 
-Text and normalized text are cleared on startup and each minute once older than
+Text and normalized text are cleared on startup and every ten minutes once older than
 the chat's memory window or 90 days, whichever is shorter. Cleanup resumes on
 startup after downtime. Fingerprints remain available for permanent memory.
 This is periodic erasure, not exact-deadline deletion; text may remain until the
 next sweep. Changing a memory window cannot recover already erased text.
-Automatic user deletion and post-removal purging belong to later launch work;
-contact the deployment's operator for removal meanwhile. Logs contain only
+Use /forgetme to erase stored text, display names and scores while retaining fingerprints and strikes. Removed chats are purged after seven days. Logs contain only
 metadata, never message text, tokens or raw API errors.
 
 Schema metadata and the retention job's chat-directory enumeration are global

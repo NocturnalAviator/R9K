@@ -8,25 +8,52 @@ import { migrate } from "./db/migrate.js";
 import { sweepExpiredText } from "./db/retention.js";
 import { createBot } from "./bot.js";
 import { errorSummary } from "./errors.js";
+import { Health } from "./operations/health.js";
+import { Alerts } from "./operations/alerts.js";
+import { postWeekly } from "./stats/scores.js";
 const config = readConfig();
 const logger = pino({ level: config.LOG_LEVEL });
 const db = openDb(config);
+const health = new Health(() => new Date());
+const alerts = new Alerts(
+  () => new Date(),
+  async (text) => {
+    if (config.ALERT_CHAT_ID !== undefined)
+      await bot.api.sendMessage(config.ALERT_CHAT_ID, text);
+  },
+);
+const bot = createBot({
+  db,
+  config,
+  logger,
+  clock: () => new Date(),
+  health,
+  alerts,
+});
+const server = config.HEALTH_PORT
+  ? health.listen(db, config.HEALTH_PORT)
+  : undefined;
 try {
   await migrate(db);
   await sweepExpiredText(db, new Date());
   let retention: Promise<void> | undefined;
   const timer = setInterval(() => {
     if (retention) return;
-    retention = sweepExpiredText(db, new Date())
-      .catch((e: unknown) => {
+    retention = (async () => {
+      await sweepExpiredText(db, new Date());
+      await postWeekly(db, new Date(), (id, text) =>
+        bot.api.sendMessage(id, text),
+      );
+    })()
+      .catch(async (e: unknown) => {
+        await alerts.report(e);
         logger.error({ err: errorSummary(e) }, "Text cleanup failed");
       })
       .finally(() => {
         retention = undefined;
       });
-  }, 60000);
+  }, 600000);
   timer.unref();
-  const bot = createBot({ db, config, logger, clock: () => new Date() });
   bot.api.config.use(apiThrottler());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
   const runner = run(bot, {
@@ -51,6 +78,7 @@ try {
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
       clearInterval(timer);
+      server?.close();
       await runner.stop();
       await retention;
       await db.close();
@@ -70,6 +98,8 @@ try {
     process.removeListener("SIGTERM", onSignal);
   }
 } catch (e) {
+  server?.close();
+  await alerts.report(e);
   logger.error({ err: errorSummary(e) }, "Bot startup or polling failed");
   await db.close();
   process.exitCode = 1;

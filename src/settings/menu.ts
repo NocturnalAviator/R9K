@@ -140,6 +140,12 @@ export const controls: readonly Control[] = [
     label: "Exempt admins",
     choices: bool,
   },
+  {
+    screen: "memory",
+    key: "leaderboard.weekly",
+    label: "Weekly leaderboard",
+    choices: bool,
+  },
 ];
 export const phraseId = (phrase: string): string =>
   createHash("sha256").update(phrase).digest("hex").slice(0, 24);

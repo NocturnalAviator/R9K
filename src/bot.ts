@@ -11,7 +11,12 @@ import { processMessage } from "./enforce/process-message.js";
 import { applyVerdict } from "./handlers/enforcement.js";
 import { registerSettings } from "./handlers/settings.js";
 import { errorSummary } from "./errors.js";
+import { registerCommunity } from "./handlers/community.js";
+import type { Health } from "./operations/health.js";
+import type { Alerts } from "./operations/alerts.js";
 export interface BotDeps {
+  health?: Health;
+  alerts?: Alerts;
   db: Db;
   config: Config;
   logger: Logger;
@@ -24,9 +29,16 @@ export function createBot({
   logger,
   clock,
   botInfo,
+  health,
+  alerts,
 }: BotDeps): Bot {
   const bot = new Bot(config.BOT_TOKEN, { botInfo });
   const admins = new AdminCache(clock);
+  bot.api.config.use(async (prev, method, payload, signal) => {
+    const result = await prev(method, payload, signal);
+    if (method === "getUpdates" && result.ok) health?.mark();
+    return result;
+  });
   bot.use(
     sequentialize((ctx) => {
       const m = ctx.message;
@@ -38,7 +50,9 @@ export function createBot({
   bot.use(async (ctx, next) => {
     try {
       await next();
+      health?.mark();
     } catch (e) {
+      await alerts?.report(e);
       logger.error(
         {
           chatId: ctx.chat?.id,
@@ -49,7 +63,8 @@ export function createBot({
       );
     }
   });
-  bot.catch((e) => {
+  bot.catch(async (e) => {
+    await alerts?.report(e.error);
     logger.error(
       { updateId: e.ctx.update.update_id, err: errorSummary(e.error) },
       "Update failed",
@@ -78,7 +93,7 @@ export function createBot({
       }
   });
   const intro =
-    "R9K checks group messages for repeats and applies warnings, deletions and mutes. Add me to a group and grant admin, delete messages and restrict members rights. Commands: /start /settings /status /privacy /help.";
+    "R9K checks group messages for repeats and applies warnings, deletions and mutes. Add me to a group and grant admin, delete messages and restrict members rights. Commands: /start /settings /status /privacy /me /top /why /forgetme /help.";
   const status = async (ctx: Context) => {
     if (!ctx.chat) return;
     if (ctx.chat.type === "private") {
@@ -97,7 +112,23 @@ export function createBot({
   };
   // Commands and service messages also interrupt a user's sticker run.
   bot.use(async (ctx, next) => {
-    const msg = ctx.message;
+    const msg = ctx.message ?? ctx.editedMessage;
+    if (
+      msg?.from &&
+      !msg.from.is_bot &&
+      (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")
+    ) {
+      await db.query(
+        `INSERT INTO users(chat_id,user_id,first_name,username,updated_at) SELECT chat_id,$2,$3,$4,$5 FROM chats WHERE chat_id=$1 AND removed_at IS NULL ON CONFLICT(chat_id,user_id) DO UPDATE SET first_name=$3,username=$4,updated_at=$5`,
+        [
+          ctx.chat.id,
+          msg.from.id,
+          msg.from.first_name,
+          msg.from.username ?? null,
+          clock(),
+        ],
+      );
+    }
     if (
       msg?.from &&
       !msg.from.is_bot &&
@@ -105,19 +136,20 @@ export function createBot({
       (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")
     ) {
       await db.query(
-        "UPDATE sticker_state SET state=jsonb_set(state,'{run}','0') WHERE chat_id=$1 AND user_id=$2",
-        [ctx.chat.id, msg.from.id],
+        "UPDATE sticker_state SET state=jsonb_set(state,'{run}','0'),updated_at=$3 WHERE chat_id=$1 AND user_id=$2",
+        [ctx.chat.id, msg.from.id, clock()],
       );
     }
     await next();
   });
   registerSettings(bot, db, admins, clock);
+  registerCommunity(bot, db, admins, clock);
   bot.command("start", status);
   bot.command("status", status);
   bot.command("help", (ctx) => ctx.reply(intro));
   bot.command("privacy", (ctx) =>
     ctx.reply(
-      "We store message text separately per chat, for at most its memory window and never more than 90 days, plus fingerprints, strike counts and action counts. Forever memory keeps fingerprints after text is erased. Ask the bot operator to remove your data; automated removal and the full policy come later.",
+      `We store text per chat for its memory window (at most 90 days), fingerprints, user ids, display names, scores, strikes and audit records. No cross-chat matching. Use /forgetme to erase text, names and scores; fingerprints and strikes remain. Removed chats are purged after 7 days. Policy: ${config.PRIVACY_URL}`,
     ),
   );
   bot.on(["message", "edited_message"], async (ctx) => {

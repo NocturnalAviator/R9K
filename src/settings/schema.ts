@@ -36,6 +36,10 @@ const stickersSchema = z
       : { ...s, ...stickerModes[s.mode] },
   );
 export const settingsSchema = z.object({
+  leaderboard: z
+    .object({ weekly: z.boolean().catch(false).default(false) })
+    .prefault({})
+    .catch({ weekly: false }),
   detectForwards: z.boolean().catch(true).default(true),
   detectMedia: z.boolean().catch(true).default(true),
   detectLinks: z.boolean().catch(false).default(false),

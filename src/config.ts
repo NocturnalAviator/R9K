@@ -1,5 +1,13 @@
 import { z } from "zod";
 export const configSchema = z.object({
+  PRIVACY_URL: z
+    .string()
+    .url()
+    .default(
+      "https://github.com/NocturnalAviator/R9K/blob/main/docs/PRIVACY.md",
+    ),
+  HEALTH_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  ALERT_CHAT_ID: z.coerce.number().int().optional(),
   BOT_TOKEN: z.string().min(1),
   DATABASE_URL: z.string().url().optional(),
   PGLITE_DIR: z.string().min(1).default(".data/pglite"),

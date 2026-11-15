@@ -64,6 +64,7 @@ const group = { id: -1, type: "supergroup" as const, title: "Test chat" };
 const privateChat = { id: 20, type: "private" as const, first_name: "Admin" };
 const config = {
   BOT_TOKEN: "999:fake",
+  PRIVACY_URL: "https://example.org/privacy",
   PGLITE_DIR: "unused",
   LOG_LEVEL: "silent" as const,
 };

@@ -48,6 +48,7 @@ const botAdmin: ChatMember = {
 };
 const config = {
   BOT_TOKEN: "999:fake",
+  PRIVACY_URL: "https://example.org/privacy",
   PGLITE_DIR: ".data/pglite",
   LOG_LEVEL: "silent" as const,
 };
@@ -467,4 +468,198 @@ it("commands and service messages reset the sticker run", async () => {
   await content(4, { new_chat_members: [user] });
   await content(5, { sticker });
   expect(methods()).toEqual([]);
+});
+
+async function command(name: string, extra: Partial<Message.TextMessage> = {}) {
+  await message(++updateId, `/${name}`, {
+    entities: [{ type: "bot_command", offset: 0, length: name.length + 1 }],
+    ...extra,
+  });
+}
+it("me and top are public replies, top is chat-rate-limited and me shows decay", async () => {
+  await message(1, "first");
+  await message(2, "second");
+  await message(3, "first");
+  await command("me");
+  let response = calls.filter((c) => c.method === "sendMessage").at(-1)!;
+  expect(response.payload.text).toContain(
+    "originals: 66.7%".replace("originals", "originality"),
+  );
+  expect(response.payload.text).toContain(
+    "streak: 0; best streak: 2; strike level: 1.00",
+  );
+  expect(response.payload.reply_parameters).toBeDefined();
+  expect(response.payload.ephemeral_message_parameters).toBeUndefined();
+  await db.query(
+    "UPDATE strikes SET updated_at=$3 WHERE chat_id=$1 AND user_id=$2",
+    [-1, 10, new Date(+now - 21600000)],
+  );
+  await command("me");
+  expect(
+    calls.filter((c) => c.method === "sendMessage").at(-1)?.payload.text,
+  ).toContain("strike level: 0.50");
+  calls.length = 0;
+  await command("top");
+  await command("top");
+  expect(calls.filter((c) => c.method === "sendMessage")).toHaveLength(1);
+  response = calls.filter((c) => c.method === "sendMessage")[0]!;
+  expect(response.payload.text).toContain("Tester");
+  expect(response.payload.ephemeral_message_parameters).toBeUndefined();
+  await db.query("UPDATE chats SET last_top_at=$2 WHERE chat_id=$1", [
+    -1,
+    new Date(+now - 60000),
+  ]);
+  await command("top");
+  expect(calls.filter((c) => c.method === "sendMessage")).toHaveLength(2);
+});
+it("why self and admin replies show bounded quotes and expired text, non-admin sees only self", async () => {
+  const original = "some lengthy original ".repeat(20);
+  await message(1, original);
+  for (let i = 2; i <= 7; i++) await message(i, original);
+  calls.length = 0;
+  await command("why");
+  let response = calls.find((c) => c.method === "sendMessage")!;
+  expect(response.payload.text).toContain("Repeated text");
+  expect(response.payload.text).toContain("2026-01-01");
+  expect(response.payload.text).not.toContain(original);
+  expect(response.payload.ephemeral_message_parameters).toEqual({
+    receiver_user_id: 10,
+  });
+  const reply = {
+    reply_to_message: undefined,
+    message_id: 1,
+    date: +now / 1000,
+    chat: { id: -1, type: "supergroup" as const, title: "Test" },
+    from: user,
+    text: original,
+  };
+  calls.length = 0;
+  await command("why", { from: admin.user, reply_to_message: reply });
+  response = calls.find((c) => c.method === "sendMessage")!;
+  expect(String(response.payload.text).split("\n\n")).toHaveLength(5);
+  expect(response.payload.ephemeral_message_parameters).toEqual({
+    receiver_user_id: 20,
+  });
+  await db.query(
+    "UPDATE messages SET raw_text=NULL,normalized_text=NULL WHERE chat_id=$1",
+    [-1],
+  );
+  calls.length = 0;
+  await command("why", { reply_to_message: reply });
+  expect(calls.find((c) => c.method === "sendMessage")?.payload.text).toContain(
+    "text no longer stored",
+  );
+  calls.length = 0;
+  await command("why", { from: { ...user, id: 30 }, reply_to_message: reply });
+  expect(calls.find((c) => c.method === "sendMessage")?.payload.text).toBe(
+    "No actions recorded.",
+  );
+});
+it("forgetme group removes text and names, private requires confirmation across chats", async () => {
+  await message(1, "remember");
+  await command("forgetme");
+  expect(
+    (await db.query("SELECT raw_text FROM messages WHERE chat_id=$1", [-1]))
+      .rows[0]?.raw_text,
+  ).toBeNull();
+  expect(
+    (await db.query("SELECT * FROM users WHERE chat_id=$1", [-1])).rows,
+  ).toHaveLength(0);
+  await message(2, "remember");
+  expect(calls.some((c) => c.method === "setMessageReaction")).toBe(true);
+  await saveChat(
+    db,
+    { id: -2, type: "supergroup" },
+    { admin: true, deleteMessages: true, restrictMembers: true },
+    now,
+  );
+  await message(3, "second chat", {
+    chat: { id: -2, type: "supergroup", title: "Other" },
+  });
+  const privateChat = {
+    id: 10,
+    type: "private" as const,
+    first_name: "Tester",
+  };
+  await command("forgetme", { chat: privateChat });
+  expect(
+    (await db.query("SELECT raw_text FROM messages WHERE chat_id=$1", [-2]))
+      .rows[0]?.raw_text,
+  ).toBe("second chat");
+  await bot.handleUpdate({
+    update_id: ++updateId,
+    callback_query: {
+      id: "confirm",
+      from: user,
+      chat_instance: "test",
+      data: "forget:10",
+      message: {
+        message_id: 100,
+        date: +now / 1000,
+        chat: privateChat,
+        from: botInfo,
+        text: "Confirm",
+      },
+    },
+  });
+  expect(
+    (await db.query("SELECT raw_text FROM messages WHERE chat_id=$1", [-2]))
+      .rows[0]?.raw_text,
+  ).toBeNull();
+  expect(
+    (await db.query("SELECT * FROM fingerprints WHERE chat_id=$1", [-2])).rows,
+  ).toHaveLength(1);
+  expect(
+    calls.filter((c) => c.method === "editMessageText").at(-1)?.payload.text,
+  ).toContain("Removed:");
+});
+
+it("tracks successful polling and processed updates, and alerts on boundary failures", async () => {
+  const { Health } = await import("../src/operations/health.js");
+  const { Alerts } = await import("../src/operations/alerts.js");
+  const health = new Health(() => now);
+  const alertTexts: string[] = [];
+  const alerts = new Alerts(
+    () => now,
+    async (text) => {
+      alertTexts.push(text);
+    },
+  );
+  bot = createBot({
+    db,
+    config,
+    logger,
+    clock: () => now,
+    botInfo,
+    health,
+    alerts,
+  });
+  const pollingTracker = bot.api.config.installedTransformers()[0]!;
+  let broken = false;
+  bot.api.config.use(async (_prev, method) => {
+    if (method === "getUpdates") return { ok: true, result: [] } as never;
+    if (broken) throw new Error("private payload");
+    return { ok: true, result: [] } as never;
+  });
+  // Fake transport short-circuits inner transformers; wrap it with the real tracker.
+  bot.api.config.use(pollingTracker);
+  expect(await health.status(db)).toBe(503);
+  await bot.api.getUpdates();
+  expect(await health.status(db)).toBe(200);
+  broken = true;
+  await message(1, "secret");
+  expect(alertTexts).toHaveLength(1);
+  expect(alertTexts[0]).not.toContain("private payload");
+  const updateHealth = new Health(() => now);
+  bot = createBot({
+    db,
+    config,
+    logger,
+    clock: () => now,
+    botInfo,
+    health: updateHealth,
+  });
+  bot.api.config.use(async () => ({ ok: true, result: [] }) as never);
+  await message(2, "original");
+  expect(await updateHealth.status(db)).toBe(200);
 });
