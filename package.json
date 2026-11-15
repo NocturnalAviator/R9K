@@ -1,0 +1,44 @@
+{
+  "name": "r9k",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "migrate": "node --import tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
+    "format": "prettier --write .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/transformer-throttler": "^1.2.1",
+    "grammy": "^1.46.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "eslint": "10.15.0",
+    "prettier": "^3.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "7.3.8",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "minimatch": "9.0.9"
+  }
+}
