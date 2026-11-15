@@ -45,7 +45,9 @@ This brief adds incentives, explainability, the data-privacy commands and jobs, 
 - **Retention job** (extend `src/db/retention.ts`): besides clearing text past `min(memorySeconds, 90 days)`,
   delete fingerprints older than the chat's memory window, delete `messages` rows that have no text and no
   fingerprints, delete `actions` older than 90 days and weekly stats older than 26 weeks. Work in bounded batches so
-  a large chat cannot hold a long lock. Keep per-chat scoping.
+  a large chat cannot hold a long lock. Keep per-chat scoping. Also clean the helper tables that currently grow
+  without bound: `album_actions` (add a timestamp; drop rows older than a day), `chains` whose window has long
+  passed, and `sticker_state` untouched for 30 days. `/forgetme` and the chat purge must cover these tables too.
 - `/privacy`: short summary plus a link to the policy. `docs/PRIVACY.md`: a plain-language privacy policy covering
   what is stored (message text per chat, fingerprints, user ids, display names, strikes, audit log), why, how long
   (memory window, 90-day cap, 7-day purge after removal), who can see it (the operator; group admins only through
