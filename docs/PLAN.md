@@ -23,7 +23,7 @@ A public Telegram bot that enforces ROBOT9000-style originality in group chats, 
 - Edits arrive as `edited_message` and must be re-checked, otherwise editing a message into a repeat evades the filter.
 - Albums arrive as separate messages sharing a `media_group_id` and are judged as one unit.
 - Sending is limited to roughly 20 messages per minute per group. The bot therefore warns with a reaction (`setMessageReaction`) instead of a text reply, and batches anything it does say.
-- Bot API 10.2 added ephemeral group messages visible to one user. If they work as described they are the right channel for "this was a repeat of X" notices. **Verify against the official docs before relying on it**; fall back to a private message.
+- Bot API 10.2 added **ephemeral messages**: `sendMessage` with `receiver_user_id` posts in the group but is visible only to that user and the bot (verified in the official changelog). Repeat notices use these, so warnings never clutter the chat. grammY 1.45+ covers 10.2.
 
 Current versions as of 2026-11-15: Bot API 10.4 (2026-11-09, widgets and TON, nothing relevant here); grammY 1.46.0 supports 10.3. grammY 2.0 is in beta on JSR only; stay on 1.x and migrate once it is stable.
 
@@ -67,7 +67,7 @@ Decay follows the original: the level halves every 6 hours by default. Every num
 Full-text storage makes this bot a chat logger for every group that adds it, which carries real obligations for a public bot:
 
 - Publish a privacy policy and a `/privacy` command (Telegram's bot developer terms require a policy).
-- Text is retained only as long as the chat's memory window, with a hard server-side cap. "Forever" memory keeps the fingerprint and drops the text after the cap.
+- Text is retained only as long as the chat's memory window, with a hard server-side cap of 90 days. "Forever" memory keeps the fingerprint and drops the text after the cap.
 - `/forgetme` deletes a user's stored text; removing the bot from a chat purges that chat after a grace period.
 - Encrypted disk on the host, database not exposed outside the Compose network, encrypted off-site backups.
 - Data is strictly partitioned by chat. No cross-chat matching.
@@ -108,6 +108,7 @@ grammY plugins: `runner` (concurrent polling, sequential per chat), `auto-retry`
 
 ## Needed from the owner
 
-- A development bot token from @BotFather and a test supergroup.
-- A hard cap for text retention (proposed: 90 days).
+- Run `scripts/import-token.sh` on the development machine to copy the bot token into `.env`.
+- Add the bot to the test group by username and promote it to admin (bots cannot join through invite links).
+- Text retention hard cap: **90 days** (decided).
 - VPS provider and region when milestone 6 approaches.
