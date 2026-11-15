@@ -11,6 +11,7 @@ import { processMessage } from "./enforce/process-message.js";
 import { applyVerdict } from "./handlers/enforcement.js";
 import { registerSettings } from "./handlers/settings.js";
 import { errorSummary } from "./errors.js";
+import { respond } from "./handlers/respond.js";
 import { registerCommunity } from "./handlers/community.js";
 import type { Health } from "./operations/health.js";
 import type { Alerts } from "./operations/alerts.js";
@@ -70,6 +71,24 @@ export function createBot({
       "Update failed",
     );
   });
+  bot.on("message::bot_command", async (ctx, next) => {
+    const entity = ctx.msg.entities?.find((e) => e.type === "bot_command");
+    logger.info(
+      {
+        chatId: ctx.chat.id,
+        userId: ctx.from?.id,
+        command: entity
+          ? (ctx.msg.text ?? "").slice(
+              entity.offset,
+              entity.offset + entity.length,
+            )
+          : undefined,
+        ephemeral: ctx.msg.ephemeral_message_id !== undefined,
+      },
+      "Command",
+    );
+    await next();
+  });
   bot.on("chat_member", (ctx) => {
     admins.invalidate(ctx.chat.id);
   });
@@ -100,12 +119,14 @@ export function createBot({
       await ctx.reply(intro);
       return;
     }
+    if (ctx.chat.type !== "group" && ctx.chat.type !== "supergroup") return;
     const member = await ctx.api.getChatMember(ctx.chat.id, ctx.me.id);
     const rights = memberRights(member);
     await saveChat(db, ctx.chat, rights, clock());
     const chat = await loadChat(db, ctx.chat.id);
     const s = chat!.settings;
-    await ctx.reply(
+    await respond(
+      ctx,
       rightsSummary(rights, ctx.chat.type) +
         ` Settings: ${s.warnStrikes} warnings, ${s.deleteOnlyStrikes} delete-only strikes; mute ${s.muteBaseSeconds}s × ${s.muteMultiplier}, capped at ${s.muteCapSeconds}s; memory ${s.memorySeconds === null ? "forever" : s.memorySeconds + "s"}.`,
     );
@@ -142,13 +163,14 @@ export function createBot({
     }
     await next();
   });
-  registerSettings(bot, db, admins, clock);
+  registerSettings(bot, db, admins, clock, logger);
   registerCommunity(bot, db, admins, clock);
   bot.command("start", status);
   bot.command("status", status);
-  bot.command("help", (ctx) => ctx.reply(intro));
+  bot.command("help", (ctx) => respond(ctx, intro));
   bot.command("privacy", (ctx) =>
-    ctx.reply(
+    respond(
+      ctx,
       `We store text per chat for its memory window (at most 90 days), fingerprints, user ids, display names, scores, strikes and audit records. No cross-chat matching. Use /forgetme to erase text, names and scores; fingerprints and strikes remain. Removed chats are purged after 7 days. Policy: ${config.PRIVACY_URL}`,
     ),
   );
@@ -168,6 +190,9 @@ export function createBot({
       admins.invalidate(ctx.chat.id);
       return;
     }
+    // Ephemeral commands and messages are private exchanges with the bot
+    // (and have message_id 0); they are never chat content to judge.
+    if (msg.ephemeral_message_id !== undefined) return;
     const text = msg.text ?? msg.caption ?? "";
     const media =
       msg.photo?.reduce((largest, size) =>

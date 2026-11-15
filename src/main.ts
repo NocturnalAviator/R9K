@@ -7,6 +7,7 @@ import { migrate } from "./db/migrate.js";
 import { sweepExpiredText } from "./db/retention.js";
 import { createBot } from "./bot.js";
 import { errorSummary } from "./errors.js";
+import { registerCommands } from "./commands.js";
 import { Health } from "./operations/health.js";
 import { Alerts } from "./operations/alerts.js";
 import { postWeekly } from "./stats/scores.js";
@@ -69,6 +70,10 @@ try {
         ],
       },
     },
+  });
+  // The "/" menu in Telegram clients; the bot works without it.
+  registerCommands(bot.api).catch((e: unknown) => {
+    logger.warn({ err: errorSummary(e) }, "Command list registration failed");
   });
   logger.info(
     { database: config.DATABASE_URL ? "postgres" : "pglite" },

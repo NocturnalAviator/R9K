@@ -7,6 +7,7 @@ export interface Rights {
   restrictMembers: boolean;
 }
 export interface ChatRow {
+  title: string;
   settings: Settings;
   rights: Rights;
   removed: boolean;
@@ -39,15 +40,18 @@ export async function loadChat(
 ): Promise<ChatRow | undefined> {
   const row = (
     await db.query<{
+      title: string | null;
       settings: unknown;
       bot_rights: Rights;
       removed_at: Date | null;
-    }>("SELECT settings,bot_rights,removed_at FROM chats WHERE chat_id=$1", [
-      id,
-    ])
+    }>(
+      "SELECT title,settings,bot_rights,removed_at FROM chats WHERE chat_id=$1",
+      [id],
+    )
   ).rows[0];
   return row
     ? {
+        title: row.title ?? "This chat",
         settings: parseSettings(row.settings),
         rights: row.bot_rights,
         removed: row.removed_at !== null,

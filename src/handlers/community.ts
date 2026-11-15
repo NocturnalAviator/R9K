@@ -5,6 +5,7 @@ import { loadChat } from "../db/chats.js";
 import { forget } from "../db/privacy.js";
 import { rate, top, weekStart } from "../stats/scores.js";
 import { sendNotice } from "./enforcement.js";
+import { respond } from "./respond.js";
 const ruleNames: Record<string, string> = {
   exact_text: "Repeated text",
   near_text: "Very similar text",
@@ -61,9 +62,9 @@ export function registerCommunity(
             1000 /
             chat.settings.strikeHalfLifeSeconds)
       : 0;
-    await ctx.reply(
+    await respond(
+      ctx,
       `Originals: ${s.originals}; repeats: ${s.repeats}; originality: ${rate(s.originals, s.repeats)}; streak: ${s.streak}; best streak: ${s.best_streak}; strike level: ${level.toFixed(2)}.`,
-      { reply_parameters: { message_id: ctx.msg.message_id } },
     );
   });
   bot.command("top", async (ctx) => {
@@ -125,7 +126,8 @@ export function registerCommunity(
       return;
     }
     if (!(await loadChat(db, ctx.chat.id))) return;
-    await ctx.reply(
+    await respond(
+      ctx,
       summary(await forget(db, ctx.chat.id, ctx.from.id, clock())),
     );
   });

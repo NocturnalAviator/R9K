@@ -297,6 +297,7 @@ export function renderMenu(
       add("Add phrase", "exempt", "add");
     }
   }
-  add("Back", "main");
+  if (screen === "main") add("Close", "main", "close");
+  else add("« Back", "main");
   return { text, reply_markup: kb };
 }

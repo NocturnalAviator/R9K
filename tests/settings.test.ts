@@ -75,6 +75,7 @@ let currentAdmins = [admin];
 let secondChatAdmin = false;
 let botMember: ChatMember = botAdmin;
 let failEdit = false;
+let failEphemeral = false;
 const logger = pino({ level: "silent" });
 const errors = vi.spyOn(logger, "error");
 function makeBot() {
@@ -91,6 +92,12 @@ function makeBot() {
       return { ok: true, result: botMember } as never;
     if (method === "getChat")
       return { ok: true, result: { ...group, id: data.chat_id } } as never;
+    if (failEphemeral && data.ephemeral_message_parameters)
+      return {
+        ok: false,
+        error_code: 400,
+        description: "Bad Request: ephemeral messages are not supported",
+      };
     if (method === "editMessageText" && failEdit)
       return {
         ok: false,
@@ -127,6 +134,7 @@ beforeEach(async () => {
   secondChatAdmin = false;
   botMember = botAdmin;
   failEdit = false;
+  failEphemeral = false;
   updateId = 0;
   calls.length = 0;
   errors.mockClear();
@@ -192,25 +200,159 @@ const step = async (key: string) => {
   const i = controls.findIndex((c) => c.key === key);
   await press(callback(-1, controls[i]!.screen, "cycle", String(i)));
 };
-it("group command is silent for non-admins and gives admins a private URL", async () => {
+const ephemeralSends = () =>
+  calls.filter(
+    (c) => c.method === "sendMessage" && c.payload.ephemeral_message_parameters,
+  );
+async function pressEphemeral(data: string, from = admin.user, chat = group) {
+  await bot.handleUpdate({
+    update_id: ++updateId,
+    callback_query: {
+      id: String(updateId),
+      from,
+      chat_instance: "x",
+      data,
+      message: {
+        message_id: 0,
+        ephemeral_message_id: 7,
+        receiver_user: from,
+        date: 0,
+        chat,
+        from: botInfo,
+        text: "Old menu",
+      },
+    },
+  } as Update);
+}
+it("group /settings is silent for non-admins and opens a menu only the admin sees", async () => {
   await message("/settings", group, user);
   expect(calls.filter((c) => c.method === "sendMessage")).toHaveLength(0);
+  expect(calls.some((c) => c.method === "deleteMessage")).toBe(false);
   expect(
     (await db.query("SELECT * FROM managed_chats WHERE chat_id=$1", [-1])).rows,
   ).toHaveLength(0);
   await message("/settings", group);
-  expect(calls.filter((c) => c.method === "sendMessage")).toHaveLength(1);
+  // Every message the bot sent to the group is addressed to the admin alone.
+  const sent = calls.filter((c) => c.method === "sendMessage");
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.payload).toMatchObject({
+    chat_id: -1,
+    ephemeral_message_parameters: { receiver_user_id: 20 },
+  });
+  expect(lastMenu().text).toContain("Preset: Relaxed");
+  // The visibly typed command is removed.
+  expect(
+    calls.filter((c) => c.method === "deleteMessage").map((c) => c.payload),
+  ).toEqual([{ chat_id: -1, message_id: updateId }]);
+  expect(
+    (await db.query("SELECT user_id FROM managed_chats WHERE chat_id=$1", [-1]))
+      .rows,
+  ).toEqual([{ user_id: 20 }]);
+});
+it("an ephemeral /settings command is answered ephemerally and nothing is deleted", async () => {
+  await message("/settings", group, admin.user, {
+    message_id: 0,
+    ephemeral_message_id: 5,
+  });
+  expect(ephemeralSends()).toHaveLength(1);
+  expect(calls.some((c) => c.method === "deleteMessage")).toBe(false);
+  await message("/settings", group, user, {
+    message_id: 0,
+    ephemeral_message_id: 6,
+  });
+  expect(ephemeralSends().at(-1)!.payload).toMatchObject({
+    text: "Only admins of this chat can change its settings.",
+    ephemeral_message_parameters: { receiver_user_id: 10 },
+  });
+  // Ephemeral exchanges are never stored or judged as chat content.
+  expect(
+    (await db.query("SELECT * FROM messages WHERE chat_id=$1", [-1])).rows,
+  ).toHaveLength(0);
+});
+it("falls back to a private-chat link when ephemeral messages are unavailable", async () => {
+  failEphemeral = true;
+  await message("/settings", group);
   expect(lastMenu().reply_markup).toEqual(
     new (await import("grammy")).InlineKeyboard().url(
       "Open settings in private",
       "https://t.me/r9k_test_bot?start=s_-1",
     ),
   );
+});
+it("buttons on the group menu edit the ephemeral message and change settings", async () => {
+  const i = controls.findIndex((c) => c.key === "warnStrikes");
+  await pressEphemeral(callback(-1, "penalties", "cycle", String(i)));
+  expect((await settings()).warnStrikes).toBe(3);
+  const edit = calls.find((c) => c.method === "editEphemeralMessageText")!;
+  expect(edit.payload).toMatchObject({
+    chat_id: -1,
+    receiver_user_id: 20,
+    ephemeral_message_id: 7,
+  });
+  expect(calls.some((c) => c.method === "editMessageText")).toBe(false);
+  // No lookups against Telegram per press beyond the cached admin list.
   expect(
-    (await db.query("SELECT user_id FROM managed_chats WHERE chat_id=$1", [-1]))
-      .rows,
-  ).toEqual([{ user_id: 20 }]);
-  expect(calls.some((c) => c.method === "deleteMessage")).toBe(false);
+    calls.filter((c) => ["getChat", "getChatMember"].includes(c.method)),
+  ).toHaveLength(0);
+});
+it("group menu buttons do nothing for non-admins or for another chat's id", async () => {
+  const i = controls.findIndex((c) => c.key === "warnStrikes");
+  await pressEphemeral(callback(-1, "penalties", "cycle", String(i)), user);
+  expect((await settings()).warnStrikes).toBe(2);
+  secondChatAdmin = true;
+  await saveChat(
+    db,
+    { ...group, id: -2 },
+    { admin: true, deleteMessages: true, restrictMembers: true },
+    now,
+  );
+  // Pressed in chat -1 but naming chat -2: ignored even for an admin of both.
+  await pressEphemeral(callback(-2, "penalties", "cycle", String(i)));
+  expect((await loadChat(db, -2))!.settings.warnStrikes).toBe(2);
+  // A menu button on an ordinary (publicly visible) group message is ignored.
+  await bot.handleUpdate({
+    update_id: ++updateId,
+    callback_query: {
+      id: String(updateId),
+      from: admin.user,
+      chat_instance: "x",
+      data: callback(-1, "penalties", "cycle", String(i)),
+      message: {
+        message_id: 50,
+        date: 0,
+        chat: group,
+        from: botInfo,
+        text: "x",
+      },
+    },
+  } as Update);
+  expect((await settings()).warnStrikes).toBe(2);
+});
+it("/allow adds a phrase from the group; the menu's add button explains it", async () => {
+  await message("/allow good morning", group, user);
+  expect((await settings()).allowPhrases).toEqual([]);
+  await message("/allow good morning", group);
+  expect((await settings()).allowPhrases).toEqual(["good morning"]);
+  expect(ephemeralSends().at(-1)!.payload.text).toContain("1. good morning");
+  await message("/allow", group);
+  expect(ephemeralSends().at(-1)!.payload.text).toContain("Usage: /allow");
+  await pressEphemeral(callback(-1, "exempt", "add"));
+  const answer = calls
+    .filter((c) => c.method === "answerCallbackQuery")
+    .at(-1)!;
+  expect(answer.payload).toMatchObject({ show_alert: true });
+  expect(answer.payload.text).toContain("/allow");
+});
+it("close removes the menu", async () => {
+  await pressEphemeral(callback(-1, "main", "close"));
+  expect(
+    calls.find((c) => c.method === "deleteEphemeralMessage")!.payload,
+  ).toEqual({ chat_id: -1, receiver_user_id: 20, ephemeral_message_id: 7 });
+  await press(callback(-1, "main", "close"));
+  expect(calls.at(-1)).toMatchObject({
+    method: "deleteMessage",
+    payload: { chat_id: 20, message_id: 100 },
+  });
 });
 it("opens deep links and private directory with zero, one and multiple chats", async () => {
   await message("/settings");
@@ -254,7 +396,7 @@ it("renders every screen in place and handles unchanged messages", async () => {
     expect(
       (lastMenu().reply_markup as InlineKeyboardMarkup).inline_keyboard
         .flat()
-        .some((b) => b.text === "Back"),
+        .some((b) => b.text === (screen === "main" ? "Close" : "« Back")),
     ).toBe(true);
   }
   expect(calls.filter((c) => c.method === "editMessageText")).toHaveLength(
@@ -294,7 +436,13 @@ it("rejects tampered chat IDs and revocation after membership invalidation", asy
 });
 it("refuses changes when the bot has left", async () => {
   await message("/start s_-1");
-  botMember = { status: "left", user: botInfo };
+  await saveChat(
+    db,
+    group,
+    { admin: false, deleteMessages: false, restrictMembers: false },
+    now,
+    true,
+  );
   await step("warnStrikes");
   expect(lastMenu().text).toContain("no longer in");
   expect((await settings()).warnStrikes).toBe(2);

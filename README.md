@@ -49,7 +49,8 @@ Without delete rights, the bot does not process or store messages.
 History starts when the bot joins; Telegram does not supply past messages.
 
 - `/start`: introduction in private chats; status in groups.
-- `/settings`: group admins get a private settings link; in private, choose a managed chat.
+- `/settings`: group admins get a menu in the group that only they can see; in private, choose a managed chat.
+- `/allow phrase`: group admins add a phrase that may be repeated.
 - `/status`: refresh the bot's rights and display the current settings.
 - `/privacy`: storage and removal information.
 - `/me`: your counters, rate, streak, best streak and decayed strikes.
@@ -62,7 +63,7 @@ New chats use **relaxed**: 24-hour memory, two warning strikes, one delete-only
 strike, then 60-second mutes multiplied by four up to one day.
 **Classic** and **strict** share permanent fingerprint memory, no
 warnings/delete-only strikes, and mutes starting at two seconds, capped at seven
-days. Presets are exported in `src/settings/presets.ts` and selectable in the private menu. Invalid stored settings fall back field-by-field to defaults.
+days. Presets are exported in `src/settings/presets.ts` and selectable in the settings menu. Invalid stored settings fall back field-by-field to defaults.
 
 Strikes use the brief's continuous decay formula exactly:
 `floor(level * 0.5 ** (elapsed / halfLife)) + 1`, with a six-hour half-life.
@@ -114,7 +115,7 @@ Low-effort rules run before repeats on text messages, excluding media captions
 and stickers. All default off. Strict enables minimum length 3, emoji-only and
 all-caps filtering; one-word filtering applies only to replies when enabled.
 Violations delete with a private notice, no strike and no corpus entry.
-Detection and low-effort options are editable in the private settings menu.
+Detection and low-effort options are editable in the settings menu.
 
 ## Storage and implementation
 
@@ -162,26 +163,38 @@ findings rooted in minimatch's glob amplification advisory. The available
 patched major uses a license outside this repository's allowlist, so that
 upgrade is not applied. The production-only audit reports no vulnerabilities.
 
-## Private settings menu
+## Settings menu
 
-Run `/settings` as an admin in a group, then use **Open settings in private**.
-The deep link also works before the group is recorded. Private `/settings`
-opens your only managed chat directly or lists your chats. Access uses the admin
-cache (ten-minute TTL, invalidated by membership updates) and checks the bot's
-current membership on every button press and render. Failed access removes the
-user's directory record. The directory lookup is user-scoped; all settings and
-audit mutations are chat-scoped.
+Run `/settings` as an admin **in the group**. The menu opens right there as an
+ephemeral message (Bot API 10.2): only you and the bot can see it, and its
+buttons edit it in place. Telegram clients offer `/settings` in the "/" menu as
+an ephemeral command, so the command itself is hidden too; if you type it as an
+ordinary message the bot deletes it. If ephemeral messages are unavailable the
+bot falls back to an **Open settings in private** link. Private `/settings`
+still works: it opens your only managed chat directly or lists your chats.
+
+Each press is checked against the admin cache (ten-minute TTL, invalidated by
+membership updates) and the bot's recorded membership, with no extra Telegram
+lookups, so presses are fast. A group menu only acts on the group it is in.
+Failed access removes the user's directory record. The directory lookup is
+user-scoped; all settings and audit mutations are chat-scoped.
+
+The bot registers its command lists at startup (`src/commands.ts`): members see
+`/me`, `/top`, `/why`, `/forgetme`, `/privacy`, `/help`; admins also see
+`/settings`, `/allow` and `/status`. All except `/top` are ephemeral commands,
+answered so that only the sender sees the reply.
 
 Buttons cycle through displayed values and edit the message in place. Presets
 replace all options except allow-phrases after confirmation. The preset label
 is computed by comparing all current settings with the presets; any difference
-(including allow-phrases) shows **Custom**. Reset strikes requires confirmation and clears only that chat.
+(allow-phrases aside) shows **Custom**. Reset strikes requires confirmation and clears only that chat.
 Penalties preview the configured ladder before decay and Telegram's minimum
 restriction duration. Chain windows cycle through 10/30/60/300 seconds, chain
 lengths through 2/3/5/10/20, and minimum fuzzy length through 10/20/40/80.
 
 Allow-phrases support up to 50 entries of 200 Unicode characters each, displayed
-five per page. Add with a reply to the bot's chat-labelled ForceReply prompt;
+five per page. Add with `/allow phrase` in the group, or in private with a reply
+to the bot's chat-labelled ForceReply prompt;
 duplicate phrases are ignored. Removal buttons identify the phrase, so old menus
 cannot accidentally remove another entry after list changes. Callbacks and reply
 prompts work after a restart without sessions. Settings changes validate against
