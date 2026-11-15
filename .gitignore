@@ -3,3 +3,7 @@
 !.env.example
 node_modules/
 dist/
+.data/
+coverage/
+agents/briefs/*.codex.log
+agents/briefs/*.result.md
