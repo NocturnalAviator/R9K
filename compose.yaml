@@ -1,0 +1,40 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in your local environment}
+      DATABASE_URL: postgres://r9k:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/r9k
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HEALTH_PORT: 8080
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: r9k
+      POSTGRES_DB: r9k
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U r9k -d r9k"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  postgres-data:

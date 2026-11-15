@@ -1,0 +1,48 @@
+{
+  "name": "r9k",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "migrate": "node --import tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
+    "format": "prettier --write .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:live": "node --env-file=.env node_modules/vitest/vitest.mjs run -c vitest.live.config.ts",
+    "live:login": "node --env-file=.env --import tsx tests/live/login.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/runner": "^2.0.3",
+    "grammy": "^1.46.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode-terminal": "^0.12.2",
+    "eslint": "10.15.0",
+    "prettier": "^3.10.1",
+    "qrcode-terminal": "^0.12.0",
+    "telegram": "^2.26.22",
+    "tsx": "^4.23.15",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "7.3.8",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "minimatch": "9.0.9"
+  }
+}

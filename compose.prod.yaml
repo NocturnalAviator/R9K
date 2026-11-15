@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: !reset null
+    image: ghcr.io/nocturnalaviator/r9k:latest
+    env_file: .env
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  db:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
