@@ -5,9 +5,12 @@ export class AdminCache {
   invalidate(chatId: number): void {
     this.entries.delete(chatId);
   }
-  async isAdmin(ctx: Context, userId: number): Promise<boolean> {
-    if (!ctx.chat) return false;
-    const chatId = ctx.chat.id;
+  async isAdmin(
+    ctx: Context,
+    userId: number,
+    chatId = ctx.chat?.id,
+  ): Promise<boolean> {
+    if (chatId === undefined) return false;
     let entry = this.entries.get(chatId);
     if (!entry || entry.expires <= this.clock().getTime()) {
       const members = await ctx.api.getChatAdministrators(chatId);

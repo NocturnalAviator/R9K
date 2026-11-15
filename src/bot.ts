@@ -9,6 +9,7 @@ import { AdminCache } from "./middleware/admin-cache.js";
 import { memberRights, rightsSummary } from "./handlers/rights.js";
 import { processMessage } from "./enforce/process-message.js";
 import { applyVerdict } from "./handlers/enforcement.js";
+import { registerSettings } from "./handlers/settings.js";
 import { errorSummary } from "./errors.js";
 export interface BotDeps {
   db: Db;
@@ -77,7 +78,7 @@ export function createBot({
       }
   });
   const intro =
-    "R9K checks group messages for repeats and applies warnings, deletions and mutes. Add me to a group and grant admin, delete messages and restrict members rights. Commands: /start /status /privacy /help.";
+    "R9K checks group messages for repeats and applies warnings, deletions and mutes. Add me to a group and grant admin, delete messages and restrict members rights. Commands: /start /settings /status /privacy /help.";
   const status = async (ctx: Context) => {
     if (!ctx.chat) return;
     if (ctx.chat.type === "private") {
@@ -110,6 +111,7 @@ export function createBot({
     }
     await next();
   });
+  registerSettings(bot, db, admins, clock);
   bot.command("start", status);
   bot.command("status", status);
   bot.command("help", (ctx) => ctx.reply(intro));
