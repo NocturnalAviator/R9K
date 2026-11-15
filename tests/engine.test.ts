@@ -205,7 +205,17 @@ it("escalates and decays in the database", async () => {
   expect(
     (await processMessage(db, input("hello"), new Date(+now + 21600000)))
       .strike,
-  ).toBe(3);
+  ).toBe(4); // level 5 halves to 2.5, which still counts as three strikes
+});
+it("escalates when offences are seconds apart, not only at the same instant", async () => {
+  await processMessage(db, input("hello"), now);
+  const strikes = [];
+  for (let i = 1; i <= 4; i++)
+    strikes.push(
+      (await processMessage(db, input("hello"), new Date(+now + i * 1000)))
+        .strike,
+    );
+  expect(strikes).toEqual([1, 2, 3, 4]);
 });
 it("moves all chat data through cascading keys, including audit references", async () => {
   await processMessage(db, input("hello"), now);

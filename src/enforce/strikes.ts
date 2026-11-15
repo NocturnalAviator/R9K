@@ -10,6 +10,21 @@ export interface Verdict {
   matchedMessageId?: number;
   matchedAt?: Date;
 }
+/** A stored strike level after decay: it halves every `strikeHalfLifeSeconds`. */
+export function decayedLevel(
+  level: number,
+  updated: Date,
+  now: Date,
+  s: Settings,
+): number {
+  return (
+    level *
+    0.5 **
+      (Math.max(0, now.getTime() - updated.getTime()) /
+        1000 /
+        s.strikeHalfLifeSeconds)
+  );
+}
 export function nextStrike(
   level: number,
   updated: Date,
@@ -17,13 +32,10 @@ export function nextStrike(
   s: Settings,
   canMute: boolean,
 ): Verdict {
-  const effective =
-    level *
-    0.5 **
-      (Math.max(0, now.getTime() - updated.getTime()) /
-        1000 /
-        s.strikeHalfLifeSeconds);
-  const strike = Math.floor(effective) + 1;
+  // Rounded, not floored: decay is continuous, so one second after a first
+  // strike the level is 0.99998, and flooring it would make every offence
+  // "strike 1" forever. A strike stops counting once it has decayed below half.
+  const strike = Math.round(decayedLevel(level, updated, now, s)) + 1;
   if (strike <= s.warnStrikes) return { action: "warn", strike };
   if (strike <= s.warnStrikes + s.deleteOnlyStrikes || !canMute)
     return { action: "delete", strike };
@@ -51,16 +63,12 @@ export async function recordStrike(
       [chatId, userId],
     )
   ).rows[0];
-  const verdict = nextStrike(
-    row?.level ?? 0,
-    row?.updated_at ?? now,
-    now,
-    s,
-    canMute,
-  );
+  const level = row?.level ?? 0;
+  const updated = row?.updated_at ?? now;
+  const verdict = nextStrike(level, updated, now, s, canMute);
   await db.query(
     "INSERT INTO strikes(chat_id,user_id,level,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(chat_id,user_id) DO UPDATE SET level=$3,updated_at=$4",
-    [chatId, userId, verdict.strike, now],
+    [chatId, userId, decayedLevel(level, updated, now, s) + 1, now],
   );
   return verdict;
 }

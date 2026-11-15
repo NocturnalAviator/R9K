@@ -9,6 +9,8 @@ export const configSchema = z.object({
   HEALTH_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   ALERT_CHAT_ID: z.coerce.number().int().optional(),
   BOT_TOKEN: z.string().min(1),
+  // Bot API server to talk to; set only for a self-hosted server or tests.
+  TELEGRAM_API_ROOT: z.string().url().optional(),
   DATABASE_URL: z.string().url().optional(),
   PGLITE_DIR: z.string().min(1).default(".data/pglite"),
   LOG_LEVEL: z

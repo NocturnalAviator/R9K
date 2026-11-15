@@ -57,7 +57,15 @@ describe("strike maths", () => {
     ).toBe(5);
     expect(
       nextStrike(8, now, new Date(+now + 10800000), relaxed, true).strike,
-    ).toBe(6);
+    ).toBe(7);
+    // One second after a first strike the next offence is strike 2.
+    expect(
+      nextStrike(1, now, new Date(+now + 1000), relaxed, true).strike,
+    ).toBe(2);
+    // A single strike stops counting once it has decayed below half.
+    expect(
+      nextStrike(1, now, new Date(+now + 21700000), relaxed, true).strike,
+    ).toBe(1);
   });
   it("degrades mute and clamps backwards time", () => {
     expect(nextStrike(4, now, now, relaxed, false)).toEqual({

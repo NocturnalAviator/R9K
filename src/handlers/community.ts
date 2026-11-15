@@ -6,6 +6,7 @@ import { forget } from "../db/privacy.js";
 import { rate, top, weekStart } from "../stats/scores.js";
 import { sendNotice } from "./enforcement.js";
 import { respond } from "./respond.js";
+import { decayedLevel } from "../enforce/strikes.js";
 const ruleNames: Record<string, string> = {
   exact_text: "Repeated text",
   near_text: "Very similar text",
@@ -56,11 +57,7 @@ export function registerCommunity(
       )
     ).rows[0];
     const level = strike
-      ? strike.level *
-        0.5 **
-          (Math.max(0, +clock() - +strike.updated_at) /
-            1000 /
-            chat.settings.strikeHalfLifeSeconds)
+      ? decayedLevel(strike.level, strike.updated_at, clock(), chat.settings)
       : 0;
     await respond(
       ctx,

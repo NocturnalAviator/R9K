@@ -33,7 +33,12 @@ export function createBot({
   health,
   alerts,
 }: BotDeps): Bot {
-  const bot = new Bot(config.BOT_TOKEN, { botInfo });
+  const bot = new Bot(config.BOT_TOKEN, {
+    botInfo,
+    client: config.TELEGRAM_API_ROOT
+      ? { apiRoot: config.TELEGRAM_API_ROOT }
+      : undefined,
+  });
   const admins = new AdminCache(clock);
   bot.api.config.use(async (prev, method, payload, signal) => {
     const result = await prev(method, payload, signal);
