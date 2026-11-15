@@ -201,3 +201,23 @@ prompts work after a restart without sessions. Settings changes validate against
 the schema and atomically record actor, key, old value and new value in `actions`.
 The bot uses plain inline keyboards rather than the menu plugin listed in the
 plan, as required by the milestone 3 brief.
+
+## Live tests
+
+`npm test` runs everything against an in-process fake Telegram server.
+`npm run test:live` additionally drives the **running** bot through real
+Telegram, using logged-in user accounts. It is never run in CI.
+
+1. Put `TG_API_ID` and `TG_API_HASH` (from <https://my.telegram.org>) and
+   `LIVE_CHAT_ID` (a throwaway test group the bot administers) in `.env`.
+2. Log each scripted account in once, in your own terminal:
+   `npm run live:login -- member` (an ordinary member of the test group) and,
+   optionally, `npm run live:login -- admin` (an admin of it).
+3. Start the bot, then run `npm run test:live`. Suites without a saved login
+   are skipped.
+
+Use spare accounts: a saved login in `.data/live/` gives full access to that
+account. The tests post only in `LIVE_CHAT_ID`, and each run gives the member
+account one real strike there (clear them with Settings → Reset strikes).
+Telegram's test environment no longer offers throwaway accounts, so real ones
+are required.

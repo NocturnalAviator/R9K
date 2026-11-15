@@ -14,7 +14,9 @@
     "format": "prettier --write .",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:live": "node --env-file=.env node_modules/vitest/vitest.mjs run -c vitest.live.config.ts",
+    "live:login": "node --env-file=.env --import tsx tests/live/login.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.16",
@@ -31,6 +33,7 @@
     "@types/pg": "^8.23.1",
     "eslint": "10.15.0",
     "prettier": "^3.10.1",
+    "telegram": "^2.26.22",
     "tsx": "^4.23.15",
     "typescript": "5.8.3",
     "typescript-eslint": "8.72.2",
