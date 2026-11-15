@@ -210,7 +210,21 @@ export function createBot({
       entities?.some((e) => e.type === "bot_command")
     )
       return;
-    const chat = await loadChat(db, ctx.chat.id);
+    let chat = await loadChat(db, ctx.chat.id);
+    if (!chat) {
+      // The membership update can be missed (database reset, bot added while
+      // offline for longer than Telegram keeps updates): ask Telegram once.
+      try {
+        const member = await ctx.api.getChatMember(ctx.chat.id, ctx.me.id);
+        await saveChat(db, ctx.chat, memberRights(member), clock());
+        chat = await loadChat(db, ctx.chat.id);
+      } catch (e) {
+        logger.warn(
+          { chatId: ctx.chat.id, err: errorSummary(e) },
+          "Chat registration failed",
+        );
+      }
+    }
     if (!chat || chat.removed || !chat.rights.deleteMessages) return;
     const userIsAdmin = await admins.isAdmin(ctx, msg.from.id);
     const now = clock();
