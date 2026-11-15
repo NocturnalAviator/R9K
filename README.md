@@ -2,9 +2,10 @@
 
 A Telegram group bot that encourages original messages: normalized exact repeats
 earn warnings, deletions, then escalating mutes. Each group's history is isolated.
-Milestones 1–2 implement text/caption matching, edits, exemptions, presets, strike
-decay, rights checks and audit counters. Settings menus, fuzzy/media matching,
-scores and public-launch tooling are future work.
+Milestones 1, 2 and 4 implement text, link, forward, media and near-text matching,
+sticker limits, chains, albums, edits, exemptions, strike decay and audit counters.
+The engine also supports milestone 5 low-effort filters. Settings menus, scores
+and public-launch tooling remain future work.
 
 ## Local development (PGlite)
 
@@ -55,7 +56,7 @@ History starts when the bot joins; Telegram does not supply past messages.
 
 New chats use **relaxed**: 24-hour memory, two warning strikes, one delete-only
 strike, then 60-second mutes multiplied by four up to one day.
-**Classic** and **strict** currently share permanent fingerprint memory, no
+**Classic** and **strict** share permanent fingerprint memory, no
 warnings/delete-only strikes, and mutes starting at two seconds, capped at seven
 days. Presets are exported in `src/settings/presets.ts`; changing settings through
 a menu comes later. Invalid stored settings fall back field-by-field to defaults.
@@ -69,9 +70,48 @@ record retain the configured duration.
 
 Notices first target only the offending user through an ephemeral group message,
 then fall back to a private message. There is no public-notice fallback.
-The raw payload includes the brief's top-level `receiver_user_id` and the
-installed grammY API's `ephemeral_message_parameters.receiver_user_id`.
+The API payload uses `ephemeral_message_parameters.receiver_user_id`.
 Onboarding and explicit command responses are ordinary chat messages.
+
+## Wider detection and filters
+
+Rules run in order: forward, media, exact text, link, near text. Originals store
+all available fingerprints; repeats store none. Media uses stable unique file
+IDs, with the largest photo size selected. Channel forwards (and chat origins
+when a source message ID exists) use source identity; user/hidden-user forwards
+have no stable forward fingerprint. Stickers never enter this corpus.
+
+Link entities are canonicalized locally without network requests. With links
+enabled, exact matching hashes normalized surrounding text plus the canonical
+link set, so different links with the same description remain distinct. Link-only
+messages have no text fingerprint. Near matching uses normalized message text,
+`SET LOCAL pg_trgm.similarity_threshold`, the `%` predicate and a GIN index on
+`messages.normalized_text`; PGlite tests exercise thresholds and isolation.
+The query planner may choose a sequential scan for small tables.
+
+Forward/media rules default on. Links and near text default off; classic/strict
+enable both. Near text defaults to 0.8 similarity and 20 normalized characters.
+Schema defaults use normal stickers (5 per 60 seconds, 3 consecutive, 60-second
+same-sticker cooldown). Relaxed uses 10/60, 5, 10; strict uses 3/120, 2, 300.
+Custom mode uses stored numbers; off imposes no limits. Attempts advance the run
+and cooldown, including deleted stickers; only whole available tokens are spent.
+A non-sticker resets the run. Sticker violations delete with a private notice
+and no strike.
+
+Chains default to collapse: timely repeats involving multiple users are deleted
+silently without strikes. Classic/strict disable chains. Tolerate allows up to
+`chainMaxLength` total messages including the original, then enforces normally;
+a returning participant ends tolerance for the burst. A gap greater than
+`chainWindowSeconds` starts a fresh burst. Chains share the matched original's
+identity across its fingerprints; near-text matches do not form chains.
+Albums keep the first repeat's action per chat/user/album; later repeated items
+are deleted if that action deleted or muted, without another strike or notice.
+
+Low-effort rules run before repeats on text messages, excluding media captions
+and stickers. All default off. Strict enables minimum length 3, emoji-only and
+all-caps filtering; one-word filtering applies only to replies when enabled.
+Violations delete with a private notice, no strike and no corpus entry.
+All new options are schema/preset settings only; no menu has been added.
 
 ## Storage and implementation
 
@@ -81,7 +121,8 @@ row. Runner updates are also serialized per chat. Fingerprints use SHA-256;
 lookup always applies the current memory window to the original creation time.
 Editing an original replaces its fingerprint. Re-editing a penalized message
 that still matches the same original does not add another strike or repeat count.
-Other checked original/repeat events, including edits, increment the counters.
+Edits change counters only when classification changes, transferring the count
+between originals and repeats.
 
 Text and normalized text are cleared on startup and each minute once older than
 the chat's memory window or 90 days, whichever is shorter. Cleanup resumes on

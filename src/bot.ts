@@ -94,6 +94,22 @@ export function createBot({
         ` Settings: ${s.warnStrikes} warnings, ${s.deleteOnlyStrikes} delete-only strikes; mute ${s.muteBaseSeconds}s × ${s.muteMultiplier}, capped at ${s.muteCapSeconds}s; memory ${s.memorySeconds === null ? "forever" : s.memorySeconds + "s"}.`,
     );
   };
+  // Commands and service messages also interrupt a user's sticker run.
+  bot.use(async (ctx, next) => {
+    const msg = ctx.message;
+    if (
+      msg?.from &&
+      !msg.from.is_bot &&
+      !msg.sticker &&
+      (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")
+    ) {
+      await db.query(
+        "UPDATE sticker_state SET state=jsonb_set(state,'{run}','0') WHERE chat_id=$1 AND user_id=$2",
+        [ctx.chat.id, msg.from.id],
+      );
+    }
+    await next();
+  });
   bot.command("start", status);
   bot.command("status", status);
   bot.command("help", (ctx) => ctx.reply(intro));
@@ -118,10 +134,40 @@ export function createBot({
       admins.invalidate(ctx.chat.id);
       return;
     }
-    const text = msg.text ?? msg.caption;
+    const text = msg.text ?? msg.caption ?? "";
+    const media =
+      msg.photo?.reduce((largest, size) =>
+        size.width * size.height > largest.width * largest.height
+          ? size
+          : largest,
+      ) ??
+      msg.video ??
+      msg.animation ??
+      msg.document ??
+      msg.audio ??
+      msg.voice ??
+      msg.video_note;
+    const kind = msg.photo
+      ? "photo"
+      : msg.video
+        ? "video"
+        : msg.animation
+          ? "animation"
+          : msg.document
+            ? "document"
+            : msg.audio
+              ? "audio"
+              : msg.voice
+                ? "voice"
+                : msg.video_note
+                  ? "video_note"
+                  : msg.sticker
+                    ? "sticker"
+                    : "text";
+    const origin = msg.forward_origin;
     const entities = msg.entities ?? msg.caption_entities;
     if (
-      !text ||
+      (!text && !media && !msg.sticker && !origin) ||
       !msg.from ||
       msg.from.is_bot ||
       msg.sender_chat ||
@@ -150,6 +196,22 @@ export function createBot({
           chat.rights.restrictMembers &&
           !userIsAdmin,
         mediaGroupId: msg.media_group_id,
+        kind,
+        mediaId: media?.file_unique_id,
+        stickerId: msg.sticker?.file_unique_id,
+        isReply: !!msg.reply_to_message,
+        forwardOrigin: origin
+          ? {
+              type: origin.type,
+              chatId:
+                origin.type === "channel"
+                  ? origin.chat.id
+                  : origin.type === "chat"
+                    ? origin.sender_chat.id
+                    : undefined,
+              messageId: "message_id" in origin ? origin.message_id : undefined,
+            }
+          : undefined,
       },
       now,
     );

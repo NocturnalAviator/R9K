@@ -366,3 +366,105 @@ it("retains settings when rights change", async () => {
   ).toEqual(classic);
   expect(relaxed.memorySeconds).toBe(86400);
 });
+
+async function content(
+  id: number,
+  extra: Record<string, unknown>,
+  userId = 10,
+) {
+  await bot.handleUpdate({
+    update_id: ++updateId,
+    message: {
+      message_id: id,
+      date: +now / 1000,
+      chat: { id: -1, type: "supergroup", title: "Test" },
+      from: { ...user, id: userId },
+      ...extra,
+    },
+  } as Update);
+}
+it("handles re-sent photos without text and chooses the largest size", async () => {
+  await content(1, {
+    photo: [
+      { file_id: "small", file_unique_id: "s1", width: 10, height: 10 },
+      { file_id: "large", file_unique_id: "large", width: 100, height: 100 },
+    ],
+  });
+  await content(2, {
+    photo: [
+      { file_id: "small", file_unique_id: "s2", width: 10, height: 10 },
+      { file_id: "large", file_unique_id: "large", width: 100, height: 100 },
+    ],
+  });
+  expect(methods()).toEqual(["setMessageReaction", "sendMessage"]);
+  expect(calls.find((c) => c.method === "sendMessage")?.payload.text).toContain(
+    "this media",
+  );
+});
+it("detects forwarded channel posts without text", async () => {
+  const forward_origin = {
+    type: "channel",
+    date: +now / 1000,
+    chat: { id: -100, type: "channel", title: "Source" },
+    message_id: 42,
+  };
+  await content(1, { forward_origin });
+  await content(2, { forward_origin });
+  expect(methods()).toEqual(["setMessageReaction", "sendMessage"]);
+  expect(calls.find((c) => c.method === "sendMessage")?.payload.text).toContain(
+    "this forward",
+  );
+});
+it("deletes sticker spam without restricting the user", async () => {
+  const sticker = {
+    file_id: "s",
+    file_unique_id: "s",
+    type: "regular",
+    width: 100,
+    height: 100,
+    is_animated: false,
+    is_video: false,
+  };
+  await content(1, { sticker });
+  await content(2, { sticker });
+  expect(methods()).toEqual(["deleteMessage", "sendMessage"]);
+  expect(calls.find((c) => c.method === "sendMessage")?.payload.text).toContain(
+    "Sticker limit",
+  );
+});
+it("collapses a two-user chain without notices or restrictions", async () => {
+  await content(1, { text: "hello" }, 10);
+  await content(2, { text: "hello" }, 11);
+  expect(methods()).toEqual(["deleteMessage"]);
+});
+
+it("commands and service messages reset the sticker run", async () => {
+  await db.query("UPDATE chats SET settings=$2 WHERE chat_id=$1", [
+    -1,
+    JSON.stringify({
+      ...relaxed,
+      stickers: {
+        mode: "custom",
+        budget: 10,
+        windowSeconds: 60,
+        maxConsecutive: 1,
+        cooldownSeconds: 0,
+      },
+    }),
+  ]);
+  const sticker = {
+    file_id: "s",
+    file_unique_id: "s",
+    type: "regular",
+    width: 100,
+    height: 100,
+    is_animated: false,
+    is_video: false,
+  };
+  await content(1, { sticker });
+  await message(2, "/unknown");
+  await content(3, { sticker });
+  await content(4, { new_chat_members: [user] });
+  await content(5, { sticker });
+  expect(methods()).toEqual([]);
+});

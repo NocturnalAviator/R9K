@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 export interface Entity {
   type: string;
+  url?: string;
   offset: number;
   length: number;
 }

@@ -107,15 +107,34 @@ export async function applyVerdict(
         },
       ),
     );
+  if (v.silent) return;
   const ending =
     v.action === "warn"
       ? `Warning ${v.strike} of ${s.warnStrikes}.`
-      : v.action === "delete"
+      : v.action === "delete" || v.action === "delete_nostrike"
         ? "Message removed."
         : `Muted for ${formatDuration(Math.max(40, Math.ceil(v.muteSeconds ?? 0)))}.`;
+  const labels: Record<string, string> = {
+    forward: "this forward",
+    media: "this media",
+    exact_text: "this message",
+    link: "this link",
+    near_text: "a very similar message",
+  };
+  const limits: Record<string, string> = {
+    sticker_budget: "Sticker limit: too many stickers in a short time.",
+    sticker_run: "Sticker limit: too many stickers in a row.",
+    sticker_cooldown:
+      "Sticker limit: wait before sending the same sticker again.",
+    min_length: "Too short: please write a longer message.",
+    emoji_only: "Emoji-only messages are not allowed here.",
+    all_caps: "Please avoid messages written entirely in capitals.",
+    one_word: "Please write more than one word in a reply.",
+  };
   await sendNotice(
     ctx,
     userId,
-    `Repeat: this was already posted here on ${v.matchedAt?.toISOString().slice(0, 10) ?? "an earlier date"}. ${ending}`,
+    limits[v.rule ?? ""] ??
+      `Repeat: ${labels[v.rule ?? ""] ?? "this message"} was already posted here on ${v.matchedAt?.toISOString().slice(0, 10) ?? "an earlier date"}. ${ending}`,
   );
 }

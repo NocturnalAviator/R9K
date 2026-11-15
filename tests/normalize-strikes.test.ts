@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { normalize, fingerprintText } from "../src/detect/normalize.js";
 import { nextStrike } from "../src/enforce/strikes.js";
-import { relaxed, classic, strict } from "../src/settings/presets.js";
-import { parseSettings } from "../src/settings/schema.js";
+import { relaxed, classic, strict, presets } from "../src/settings/presets.js";
+import { parseSettings, stickerModes } from "../src/settings/schema.js";
 describe("normalization", () => {
   it.each([
     ["HeLLo WORLD", "hello world"],
@@ -69,6 +69,11 @@ describe("strike maths", () => {
     ).toBe(5);
   });
   it("lenient settings retain valid fields and reject invalid fields", () => {
+    // Schema defaults now use normal stickers, independently of the relaxed preset.
+    const relaxed = {
+      ...presets.relaxed,
+      stickers: { mode: "normal", ...stickerModes.normal },
+    };
     expect(
       parseSettings({
         warnStrikes: -1,

@@ -1,7 +1,9 @@
 import type { Settings } from "../settings/schema.js";
 import type { Db } from "../db/index.js";
 export interface Verdict {
-  action: "none" | "warn" | "delete" | "mute";
+  action: "none" | "warn" | "delete" | "mute" | "delete_nostrike";
+  silent?: boolean;
+  similarity?: number;
   muteSeconds?: number;
   strike?: number;
   rule?: string;
