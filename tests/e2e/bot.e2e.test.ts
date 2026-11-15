@@ -332,9 +332,13 @@ it("cleans up a flood promptly", async () => {
   const flood = Array.from({ length: 15 }, (_, i) =>
     tg.say(chat, tg.user(`Raider${i}`), "copy pasta copy pasta"),
   );
+  // Each mute follows its delete, so wait for both: the last mute can still be
+  // in flight when the last delete lands.
   await tg.until(
-    () => flood.every((m) => m.deleted),
-    "the flood to be deleted",
+    () =>
+      flood.every((m) => m.deleted) &&
+      tg.restrictions.filter((r) => r.chat === chat).length === 15,
+    "the flood to be deleted and muted",
   );
   // Fifteen deletes and mutes must not queue behind a per-chat rate limiter.
   expect(Date.now() - started).toBeLessThan(4000);
