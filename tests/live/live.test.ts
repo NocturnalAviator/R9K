@@ -67,7 +67,9 @@ class Account {
   async stats(): Promise<Stats> {
     const text = await this.reply(await this.say("/me"));
     const match =
-      /Originals: (\d+); repeats: (\d+);.*strike level: ([\d.]+)/.exec(text);
+      /Originals: (\d+); repeats: (\d+);.*strike level: (\d+(?:\.\d+)?)/.exec(
+        text,
+      );
     if (!match) throw new Error(`Unexpected /me answer: ${text}`);
     return {
       originals: Number(match[1]),
@@ -118,7 +120,7 @@ describeIf(hasSession("member"))("ordinary member on real Telegram", () => {
   it("shows a non-admin nothing for /settings", async () => {
     const command = await member.say("/settings");
     await sleep(3000);
-    expect(await member.botMessages(command)).toEqual([]);
+    expect(await member.botMessages(command)).toHaveLength(0);
   });
 });
 
@@ -147,7 +149,7 @@ describeIf(hasSession("member") && hasSession("admin"))(
       expect(
         await member.botMessages(marker),
         "the member sees no menu and no fallback button",
-      ).toEqual([]);
+      ).toHaveLength(0);
     });
   },
 );
