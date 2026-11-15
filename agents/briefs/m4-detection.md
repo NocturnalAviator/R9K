@@ -92,6 +92,19 @@ minimum), `emoji_only` (no letters or digits after normalization, at least one e
 letters and every cased letter uppercase in the original text), `one_word` (a single word, when the message is a
 reply). A hit deletes the message with a notice and **no strike**, and the message is not stored.
 
+## Notes on the existing code
+
+- `fingerprints` has primary key `(chat_id, message_id, kind)`; a message can now hold several `link`
+  fingerprints, so a new migration must change the key (for example to include `hash`).
+- The normalized text column is `messages.normalized_text`. Set `messages.kind` meaningfully (`text`, `photo`, ...).
+- `actions.matched_message_id` has no foreign key on purpose (messages get purged); keep it that way.
+- Notices (`src/handlers/enforcement.ts`): word each rule plainly, e.g. "Repeat: this link / this forward / this
+  media / a very similar message was already posted here on <date>", "Sticker limit: ...", "Too short: ...". Keep
+  them one or two sentences. Notices stay ephemeral-or-private only (`sendNotice`).
+- `stats` currently counts an edit of an original as another original. Fix: an edit changes counters only when the
+  message's classification changes (original -> repeat or repeat -> original).
+- The handler currently returns early when a message has no text; that must go for media, forwards and stickers.
+
 ## Tests
 
 - `canonicalizeUrl` table: every rule above, plus URLs that must stay distinct (different paths, different
