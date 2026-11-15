@@ -1,13 +1,14 @@
 import type { Api } from "grammy";
 import type { BotCommand } from "grammy/types";
 
-// The lists Telegram clients show when a user types "/". They are plain
-// commands, not `is_ephemeral` ones: clients without ephemeral-command support
-// hide those from the list entirely (seen on the owner's client, where only
-// /top appeared). Handlers still accept ephemeral commands if one arrives.
+// The lists Telegram clients show when a user types "/". Commands marked
+// ephemeral are sent so that only the sender and the bot see them. Telegram
+// clients older than ephemeral messages (Desktop before 7.0) leave those out
+// of the list; the commands still work there when typed by hand.
 const hidden = (command: string, description: string): BotCommand => ({
   command,
   description,
+  is_ephemeral: true,
 });
 const member: BotCommand[] = [
   hidden("me", "Your originality score and strikes"),
