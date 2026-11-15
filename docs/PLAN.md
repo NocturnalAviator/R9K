@@ -23,7 +23,7 @@ A public Telegram bot that enforces ROBOT9000-style originality in group chats, 
 - Edits arrive as `edited_message` and must be re-checked, otherwise editing a message into a repeat evades the filter.
 - Albums arrive as separate messages sharing a `media_group_id` and are judged as one unit.
 - Sending is limited to roughly 20 messages per minute per group. The bot therefore warns with a reaction (`setMessageReaction`) instead of a text reply, and batches anything it does say.
-- Bot API 10.2 added **ephemeral messages**: `sendMessage` with `receiver_user_id` posts in the group but is visible only to that user and the bot (verified in the official changelog). Repeat notices use these, so warnings never clutter the chat. grammY 1.45+ covers 10.2.
+- Bot API 10.2 added **ephemeral messages**: `sendMessage` with `ephemeral_message_parameters: { receiver_user_id }` posts in the group but is visible only to that user and the bot (parameter shape confirmed against grammY 1.46's Bot API types). Repeat notices use these, so warnings never clutter the chat. grammY 1.45+ covers 10.2.
 
 Current versions as of 2026-11-15: Bot API 10.4 (2026-11-09, widgets and TON, nothing relevant here); grammY 1.46.0 supports 10.3. grammY 2.0 is in beta on JSR only; stay on 1.x and migrate once it is stable.
 
@@ -112,3 +112,16 @@ grammY plugins: `runner` (concurrent polling, sequential per chat), `auto-retry`
 - Add the bot to the test group by username and promote it to admin (bots cannot join through invite links).
 - Text retention hard cap: **90 days** (decided).
 - VPS provider and region when milestone 6 approaches.
+
+## Status (2026-11-14)
+
+Milestones 1 to 5 and the code parts of 6 are implemented on the development branch (see `README.md`,
+`docs/OPERATIONS.md`, `docs/PRIVACY.md`). Differences from the plan above:
+
+- Local development and tests run on PGlite (in-process Postgres) when `DATABASE_URL` is unset; the development
+  machine has no Docker. The Compose stack, deploy workflow and backup scripts are untested on a real Docker host.
+- The settings menu uses plain inline keyboards with stateless callback data instead of the `menu` plugin.
+- Mutes are clamped to at least 40 seconds (Telegram treats shorter restrictions as permanent).
+- Not built: perceptual image hashing, chat-export import, webhook mode.
+- Still open for launch: VPS and region, an operator contact in `docs/PRIVACY.md`, off-site backup target, a
+  production bot token separate from the development one.
