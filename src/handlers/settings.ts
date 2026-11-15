@@ -154,6 +154,8 @@ export function registerSettings(
     await render(ctx, id);
   });
   bot.callbackQuery(/^s:/, async (ctx) => {
+    // Answer first so the button's spinner stops while the work happens.
+    const answered = ctx.answerCallbackQuery().catch(() => undefined);
     try {
       if (ctx.chat?.type !== "private") return;
       const parsed = parseCallback(ctx.callbackQuery.data);
@@ -227,7 +229,7 @@ export function registerSettings(
         op === "confirm",
       );
     } finally {
-      await ctx.answerCallbackQuery();
+      await answered;
     }
   });
   bot.on("message:text", async (ctx, next) => {

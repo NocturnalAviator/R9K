@@ -1,7 +1,6 @@
 import { pino } from "pino";
 import { run } from "@grammyjs/runner";
 import { autoRetry } from "@grammyjs/auto-retry";
-import { apiThrottler } from "@grammyjs/transformer-throttler";
 import { readConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { migrate } from "./db/migrate.js";
@@ -54,7 +53,8 @@ try {
       });
   }, 600000);
   timer.unref();
-  bot.api.config.use(apiThrottler());
+  // No client-side throttler: it spaces every call that carries a chat_id one
+  // second apart (deletes and lookups included). auto-retry handles 429s.
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
   const runner = run(bot, {
     runner: {

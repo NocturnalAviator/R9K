@@ -20,7 +20,6 @@
     "@electric-sql/pglite": "^0.5.16",
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/runner": "^2.0.3",
-    "@grammyjs/transformer-throttler": "^1.2.1",
     "grammy": "^1.46.0",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
