@@ -212,7 +212,8 @@ Telegram, using logged-in user accounts. It is never run in CI.
    `LIVE_CHAT_ID` (a throwaway test group the bot administers) in `.env`.
 2. Log each scripted account in once, in your own terminal:
    `npm run live:login -- member` (an ordinary member of the test group) and,
-   optionally, `npm run live:login -- admin` (an admin of it).
+   optionally, `npm run live:login -- admin` (an admin of it). If the login
+   code never arrives, add `--qr` and scan the code from the account's app.
 3. Start the bot, then run `npm run test:live`. Suites without a saved login
    are skipped.
 

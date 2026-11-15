@@ -1,9 +1,11 @@
 // One-time interactive login for a scripted test account:
 //   npm run live:login -- member
 //   npm run live:login -- admin
+// Add --qr to approve the login by scanning a QR code instead of a login code.
 // Run it in your own terminal; the code and any password are typed there and
 // are never stored. Only the resulting session is saved, under .data/live/.
 import { createInterface } from "node:readline/promises";
+import qrcode from "qrcode-terminal";
 import { Api } from "telegram";
 import { createClient, roles, saveSession, type Role } from "./client.js";
 
@@ -36,6 +38,33 @@ const apiId = Number(process.env.TG_API_ID);
 const apiHash = process.env.TG_API_HASH!;
 try {
   await client.connect();
+  if (process.argv.includes("--qr")) {
+    // No login code involved: an app already signed in to the account
+    // approves this login by scanning (Settings → Devices → Link Desktop Device).
+    await client.signInUserWithQrCode(
+      { apiId, apiHash },
+      {
+        qrCode: async ({ token }) => {
+          console.log(
+            `\nIn the Telegram app of the ${role} account open Settings → Devices → Link Desktop Device and scan (refreshes every 30 s):`,
+          );
+          qrcode.generate(`tg://login?token=${token.toString("base64url")}`, {
+            small: true,
+          });
+        },
+        password: () => rl.question("Two-step verification password: "),
+        onError: (err) => {
+          throw err;
+        },
+      },
+    );
+    saveSession(role, client);
+    const me = await client.getMe();
+    console.log(
+      `Logged in as ${me.firstName ?? ""} (id ${String(me.id)}) for the ${role} role.`,
+    );
+    process.exit(0);
+  }
   const phoneNumber = (
     await rl.question(
       `Phone number of the ${role} account (with +country code): `,
