@@ -93,9 +93,8 @@ it("uses current window and original created timestamp", async () => {
     ).action,
   ).toBe("mute");
 });
-it("handles exemptions without storing anything", async () => {
+it("handles exemptions: admins are stored but never penalised", async () => {
   for (const i of [
-    input("hello", { userIsAdmin: true }),
     input("!!!"),
     input("Allowed!", { settings: { ...relaxed, allowPhrases: ["allowed"] } }),
   ])
@@ -103,6 +102,30 @@ it("handles exemptions without storing anything", async () => {
   expect(
     (await db.query("SELECT message_id FROM messages WHERE chat_id=$1", [-1]))
       .rows,
+  ).toHaveLength(0);
+  // An exempt admin's message enters the corpus and counts as an original.
+  const adminInput = input("hello", { userIsAdmin: true });
+  expect((await processMessage(db, adminInput, now)).action).toBe("none");
+  expect(
+    (
+      await db.query(
+        "SELECT originals FROM stats WHERE chat_id=$1 AND user_id=$2",
+        [-1, adminInput.userId],
+      )
+    ).rows,
+  ).toEqual([{ originals: 1 }]);
+  // The admin repeating it is not penalised and leaves no trace.
+  expect(
+    (
+      await processMessage(
+        db,
+        { ...adminInput, messageId: adminInput.messageId + 1000 },
+        now,
+      )
+    ).action,
+  ).toBe("none");
+  expect(
+    (await db.query("SELECT * FROM strikes WHERE chat_id=$1", [-1])).rows,
   ).toHaveLength(0);
   await processMessage(db, input("hello"), now);
   expect(

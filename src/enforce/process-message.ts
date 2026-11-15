@@ -67,12 +67,13 @@ export async function processMessage(
         [chatId, userId, now],
       );
     const normalized = normalize(input.text, input.entities);
-    if (
-      (input.userIsAdmin && s.exemptAdmins) ||
-      (normalized && s.allowPhrases.some((p) => normalize(p) === normalized))
-    )
+    if (normalized && s.allowPhrases.some((p) => normalize(p) === normalized))
       return { action: "none" };
+    // Exempt admins are never penalised, but what they post still enters the
+    // chat's memory and their scores: others repeating an admin is a repeat.
+    const exempt = input.userIsAdmin && s.exemptAdmins;
     if (input.stickerId) {
+      if (exempt) return { action: "none" };
       if (input.isEdit) return { action: "none" };
       const previous = (
         await tx.query<{ state: StickerState }>(
@@ -98,7 +99,10 @@ export async function processMessage(
     const stats = (classification: string | null) =>
       score(tx, chatId, userId, messageId, classification, now);
     const lowRule =
-      !input.mediaId && (!input.kind || input.kind === "text") && input.text
+      !exempt &&
+      !input.mediaId &&
+      (!input.kind || input.kind === "text") &&
+      input.text
         ? lowEffortRule(
             input.text,
             normalized,
@@ -201,6 +205,7 @@ export async function processMessage(
       ).rows[0];
       if (match) rule = "near_text";
     }
+    if (match && exempt) return { action: "none" };
     const classification = match ? "repeat" : "original";
 
     await tx.query(

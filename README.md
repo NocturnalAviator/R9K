@@ -181,8 +181,8 @@ user-scoped; all settings and audit mutations are chat-scoped.
 
 The bot registers its command lists at startup (`src/commands.ts`): members see
 `/me`, `/top`, `/why`, `/forgetme`, `/privacy`, `/help`; admins also see
-`/settings`, `/allow` and `/status`. All except `/top` are ephemeral commands,
-answered so that only the sender sees the reply.
+`/settings`, `/allow` and `/status`. They are plain commands, because clients without
+ephemeral-command support hide ephemeral ones from the list.
 
 Buttons cycle through displayed values and edit the message in place. Presets
 replace all options except allow-phrases after confirmation. The preset label
